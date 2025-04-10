@@ -55,8 +55,8 @@ class Actor(nn.Module):
     def forward(self, state):
         x = F.relu(self.fc1(state))
         x = F.relu(self.fc2(x))
-        # softplusで非負出力（必要に応じて上限調整も検討可能）
-        x = F.softplus(self.fc3(x))
+        # softplusで非負出力し、5を上限とする
+        x = torch.clamp(F.softplus(self.fc3(x)), 0, 5)
         return x
 
 # --------------------------
