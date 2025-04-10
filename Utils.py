@@ -32,62 +32,37 @@ def safe_filename(title):
 # --------------------------
 # プロット関数
 # --------------------------
-def plot_episode_data(steps, predicted_ev1, predicted_ev2, actual_ev1, actual_ev2, ag_requests, init_soc_ev1, init_soc_ev2, episode_number, save_folder):
+def plot_episode_data(data, save_path, episode_num=None, initial_soc=None):
     """
-    各エピソードのデータ（予測充電量/実際の充電量、AG要請）をプロットし、指定フォルダに保存する関数です。
-    タイトルは「episode_{episode_number}(EV1__{init_soc_ev1:.1f},_EV2__{init_soc_ev2:.1f})」の形式になります。
-    
-    Parameters:
-      steps         : 各ステップの番号のリスト
-      predicted_ev1 : EV1の予測充電量リスト
-      predicted_ev2 : EV2の予測充電量リスト
-      actual_ev1    : EV1の実際の充電量リスト
-      actual_ev2    : EV2の実際の充電量リスト
-      ag_requests   : 各ステップでのAG要請リスト
-      init_soc_ev1  : EV1の初期SoC
-      init_soc_ev2  : EV2の初期SoC
-      episode_number: 出力時の最後のエピソード番号
-      save_folder   : グラフ画像の保存先フォルダ
+    MADDPGのみのモード用のプロット関数
     """
-    # フォルダが存在しない場合は作成
-    os.makedirs(save_folder, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(12, 6))
+    steps = range(len(data['ag_requests']))
     
-    fig, axs = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    # 実際の充電量の積み上げ棒グラフ＋AG要請曲線
+    # 充電量を配列に変換して確実にnumpy配列として処理
+    ev1_data = np.array(data['actual_ev1'])
+    ev2_data = np.array(data['actual_ev2'])
     
-    # タイトル用の共通部分：呼び出し側から渡されたエピソード番号を使用
-    title_base = f"episode_{episode_number}(EV1__{init_soc_ev1:.1f},_EV2__{init_soc_ev2:.1f})"
+    ax.bar(steps, ev1_data, label="EV1 Actual", color='tab:blue')
+    ax.bar(steps, ev2_data, bottom=ev1_data, label="EV2 Actual", color='tab:orange')
+    ax.plot(steps, data['ag_requests'], color='black', marker='o', linewidth=2, label="AG Request")
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Charge")
     
-    # 予測値の配列をそのまま使用（修正なし）
-    predicted_ev1_plot = predicted_ev1
-    predicted_ev2_plot = predicted_ev2
+    # タイトルの設定
+    if episode_num is not None and initial_soc is not None:
+        title = f"MADDPG Only - Episode:{episode_num}, EV1:{initial_soc['ev1']:.1f}%, EV2:{initial_soc['ev2']:.1f}%"
+    else:
+        title = "MADDPG Only - Actual Charging vs AG Request"
     
-    # 上段: RF予測充電量の積み上げ棒グラフ＋AG要請曲線
-    # 予測値は現在のステップの予測を表示するため、同じsteps配列を使用
-    axs[0].bar(steps, predicted_ev1_plot, label="EV1 Predicted")
-    axs[0].bar(steps, predicted_ev2_plot, bottom=predicted_ev1_plot, label="EV2 Predicted")
-    axs[0].plot(steps, ag_requests, color='black', marker='o', linewidth=2, label="AG Request")
-    axs[0].set_ylabel("Predicted Charge")
-    axs[0].set_title(title_base + " - Predicted Charging vs AG Request")
-    axs[0].legend()
-    
-    # 下段: 実際の充電量の積み上げ棒グラフ＋AG要請曲線
-    axs[1].bar(steps, actual_ev1, label="EV1 Actual")
-    axs[1].bar(steps, actual_ev2, bottom=actual_ev1, label="EV2 Actual")
-    axs[1].plot(steps, ag_requests, color='black', marker='o', linewidth=2, label="AG Request")
-    axs[1].set_xlabel("Step")
-    axs[1].set_ylabel("Actual Charge")
-    axs[1].set_title(title_base + " - Actual Charging vs AG Request")
-    axs[1].legend()
+    ax.set_title(title)
+    ax.legend()
     
     plt.tight_layout()
-    
-    # ファイル名は上段のタイトルを基に生成
-    filename = safe_filename(title_base) + ".png"
-    file_path = os.path.join(save_folder, filename)
-    plt.savefig(file_path)
+    plt.savefig(save_path)
     plt.close(fig)
-    print(f"グラフを保存しました: {file_path}")
-
+    print(f"グラフを保存しました: {save_path}")
 
 def plot_episode_rewards(episode_rewards, save_folder, prefix=""):
     """

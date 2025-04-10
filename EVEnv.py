@@ -66,116 +66,75 @@ class EVEnv:
                     self.ag_requests_for_episode[under_limit_indices] += redistribution
         
         self.step_count = 0
-        self.temp_actions = {}
-        self.temp_predicted_first = None
-        self.temp_predicted_second = None
-        self.temp_first_agent = None
         
         # 最初のステップのAG要請をセット
         self.ag_request = self.ag_requests_for_episode[0]
         
-        state_ev1 = self.get_state_for_agent("ev1", other_charge=None)
-        state_ev2 = self.get_state_for_agent("ev2", other_charge=None)
+        state_ev1 = self.get_state_for_agent("ev1")
+        state_ev2 = self.get_state_for_agent("ev2")
         return np.array([state_ev1, state_ev2])
 
     
-    def get_state_for_agent(self, agent, other_charge=None):
-        # other_chargeがNoneの場合は予測値（なければ0～5の乱数）を利用
-        if other_charge is None:
-            if agent == "ev1":
-                other_val = self.temp_predicted_second if self.temp_predicted_second is not None else random.uniform(0, 5)
-            elif agent == "ev2":
-                other_val = self.temp_predicted_first if self.temp_predicted_first is not None else random.uniform(0, 5)
-            else:
-                raise ValueError("Unknown agent")
-        else:
-            other_val = other_charge
-
+    def get_state_for_agent(self, agent):
         if agent == "ev1":
-            return np.array([self.soc["ev1"], self.soc["ev2"], self.ag_request, other_val], dtype=np.float32)
+            return np.array([self.soc["ev1"], self.soc["ev2"], self.ag_request, self.step_count], dtype=np.float32)
         elif agent == "ev2":
-            return np.array([self.soc["ev2"], self.soc["ev1"], self.ag_request, other_val], dtype=np.float32)
+            return np.array([self.soc["ev2"], self.soc["ev1"], self.ag_request, self.step_count], dtype=np.float32)
         else:
             raise ValueError("Unknown agent")
+            
+    def step(self, actions):
+        """
+        両エージェントが同時に行動を決定するステップ処理
+        """
+        a1 = actions[0][0]
+        a2 = actions[1][0]
         
-    def get_first_agent(self):
-        # ステップカウントにより先行エージェントを交互に決定
-        return "ev1" if ((self.step_count + 1) % 2) == 1 else "ev2"
-    
-    def step_sequential(self, agent_id, action):
-        """
-        逐次実行モードでのステップ処理を行います。
-        先行エージェントの行動を受け取り、次に後攻エージェントの行動を受け付け、
-        両エージェントの行動結果から状態更新と報酬計算を行います。
-        """
-        if not self.temp_actions:
-            first_agent = self.get_first_agent()
-            if agent_id != first_agent:
-                raise ValueError(f"Expected first action from {first_agent}, but got {agent_id}")
-            state = self.get_state_for_agent(agent_id, other_charge=self.temp_predicted_first)
-            self.temp_actions[agent_id] = action
-            self.temp_first_agent = agent_id
-            return state, None, False, {"message": "Waiting for second agent action"}
+        # 充電更新処理（CAPACITYを上限とする）
+        penalty_ev1 = False
+        if self.soc["ev1"] + a1 > self.capacity:
+            self.soc["ev1"] = self.capacity
+            penalty_ev1 = True
         else:
-            expected_second = "ev2" if self.temp_first_agent == "ev1" else "ev1"
-            if agent_id != expected_second:
-                raise ValueError(f"Expected second action from {expected_second}, but got {agent_id}")
-            self.temp_actions[agent_id] = action
-            a1 = self.temp_actions.get("ev1", 0.0)
-            a2 = self.temp_actions.get("ev2", 0.0)
-            if self.temp_first_agent == "ev1":
-                true_first_soc = self.soc["ev1"]
-            else:
-                true_first_soc = self.soc["ev2"]
-            
-            # 逐次実行時の充電更新（CAPACITYを上限とする）
-            penalty_ev1 = False
-            if self.soc["ev1"] + a1 > self.capacity:
-                self.soc["ev1"] = self.capacity
-                penalty_ev1 = True
-            else:
-                self.soc["ev1"] += a1
-            
-            penalty_ev2 = False
-            if self.soc["ev2"] + a2 > self.capacity:
-                self.soc["ev2"] = self.capacity
-                penalty_ev2 = True
-            else:
-                self.soc["ev2"] += a2
-            
-            total_charge = a1 + a2
-            deviation = abs(total_charge - self.ag_request)
-            if deviation <= TOLERANCE_NARROW:
-                reward_total = 100
-            elif deviation < TOLERANCE_WIDE:
-                reward_total = 20 * (TOLERANCE_WIDE - deviation)
-            else:
-                reward_total = 0
-            
-            reward_ev1 = reward_total / 2.0
-            reward_ev2 = reward_total / 2.0
-            if penalty_ev1:
-                reward_ev1 -= PENALTY_WEIGHT
-            if penalty_ev2:
-                reward_ev2 -= PENALTY_WEIGHT
+            self.soc["ev1"] += a1
+        
+        penalty_ev2 = False
+        if self.soc["ev2"] + a2 > self.capacity:
+            self.soc["ev2"] = self.capacity
+            penalty_ev2 = True
+        else:
+            self.soc["ev2"] += a2
+        
+        # 報酬計算
+        total_charge = a1 + a2
+        deviation = abs(total_charge - self.ag_request)
+        if deviation <= TOLERANCE_NARROW:
+            reward_total = 100
+        elif deviation < TOLERANCE_WIDE:
+            reward_total = 20 * (TOLERANCE_WIDE - deviation)
+        else:
+            reward_total = 0
+        
+        reward_ev1 = reward_total / 2.0
+        reward_ev2 = reward_total / 2.0
+        if penalty_ev1:
+            reward_ev1 -= PENALTY_WEIGHT
+        if penalty_ev2:
+            reward_ev2 -= PENALTY_WEIGHT
 
-            self.step_count += 1
-            
-            # 次ステップ用にAG要請を更新（事前生成したリストから取得）
-            if self.step_count < self.episode_steps:
-                self.ag_request = self.ag_requests_for_episode[self.step_count]
-            
-            state_ev1 = self.get_state_for_agent("ev1", other_charge=a2)
-            state_ev2 = self.get_state_for_agent("ev2", other_charge=a1)
-            next_state = np.array([state_ev1, state_ev2])
-            rewards = np.array([reward_ev1, reward_ev2], dtype=np.float32)
-            done_flags = np.array([self.step_count >= self.episode_steps, self.step_count >= self.episode_steps], dtype=np.float32)
-            info = {
-                "total_charge": total_charge,
-                "reward_total": reward_total,
-            }
-            self.temp_actions = {}
-            self.temp_predicted_first = None
-            self.temp_predicted_second = None
-            self.temp_first_agent = None
-            return next_state, rewards, done_flags, info
+        self.step_count += 1
+        
+        # 次ステップ用にAG要請を更新（事前生成したリストから取得）
+        if self.step_count < self.episode_steps:
+            self.ag_request = self.ag_requests_for_episode[self.step_count]
+        
+        state_ev1 = self.get_state_for_agent("ev1")
+        state_ev2 = self.get_state_for_agent("ev2")
+        next_state = np.array([state_ev1, state_ev2])
+        rewards = np.array([reward_ev1, reward_ev2], dtype=np.float32)
+        done_flags = np.array([self.step_count >= self.episode_steps, self.step_count >= self.episode_steps], dtype=np.float32)
+        info = {
+            "total_charge": total_charge,
+            "reward_total": reward_total,
+        }
+        return next_state, rewards, done_flags, info
