@@ -18,19 +18,19 @@ import random
 NUM_EPISODES = 20000      # 総エピソード数
 
 # RandomForest 用ハイパーパラメータ
-RF_TRAIN_INTERVAL = 1000     # RF学習呼び出し間隔（エピソード毎）
+RF_TRAIN_INTERVAL = 100     # RF学習呼び出し間隔（エピソード毎）
 RF_N_ESTIMATORS = 10         # RandomForestの決定木の数
 
 # MADDPG 用ハイパーパラメータ
 LR_ACTOR = 1e-3              # Actor の学習率
 LR_CRITIC = 1e-3             # Critic の学習率
-STATE_DIM = 5                # 環境状態の次元
+STATE_DIM = 4                # 環境状態の次元
 ACTION_DIM = 1               # 行動の次元
 NUM_AGENTS = 2               # エージェント数
 MADDPG_HIDDEN_SIZE = 64      # ネットワークの隠れ層のサイズ
 GAMMA = 0.95                 # 割引率
 TAU = 0.01                   # ソフトアップデート係数
-BATCH_SIZE = 256             # バッチサイズ
+BATCH_SIZE = 128             # バッチサイズ
 MEMORY_SIZE = int(1e6)       # Replay Buffer のサイズ
 
 # EV環境用ハイパーパラメータ
@@ -49,3 +49,7 @@ OU_DT = 1e-2                 # 時間刻み
 
 # Critic 初期化用ハイパーパラメータ
 CRITIC_INIT_W = 3e-3         # Critic 最終層の重み初期化幅
+
+# 報酬計算の閾値設定
+TOLERANCE_NARROW = 0.5  # 厳密な許容範囲（この範囲内なら最大報酬）
+TOLERANCE_WIDE = 1.5    # 緩い許容範囲（この範囲を超えると報酬なし）

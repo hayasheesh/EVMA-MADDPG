@@ -51,6 +51,8 @@ class MADDPG:
                 if np.ndim(noise_val) > 0:
                     noise_val = noise_val[0]
                 a += noise_val
+            # 行動を0〜5の範囲に制限
+            a = np.clip(a, 0, 5)
             actions.append([a])
         return np.array(actions)
             
