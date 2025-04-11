@@ -43,16 +43,22 @@ def plot_episode_data(data, save_path, episode_num=None, initial_soc=None):
     # 充電量を配列に変換して確実にnumpy配列として処理
     ev1_data = np.array(data['actual_ev1'])
     ev2_data = np.array(data['actual_ev2'])
+    ev3_data = np.array(data['actual_ev3'])
     
     ax.bar(steps, ev1_data, label="EV1 Actual", color='tab:blue')
     ax.bar(steps, ev2_data, bottom=ev1_data, label="EV2 Actual", color='tab:orange')
+    
+    # EV1とEV2の合計を計算して、その上にEV3をプロット
+    ev12_sum = ev1_data + ev2_data
+    ax.bar(steps, ev3_data, bottom=ev12_sum, label="EV3 Actual", color='tab:green')
+    
     ax.plot(steps, data['ag_requests'], color='black', marker='o', linewidth=2, label="AG Request")
     ax.set_xlabel("Step")
     ax.set_ylabel("Charge")
     
     # タイトルの設定
     if episode_num is not None and initial_soc is not None:
-        title = f"MADDPG Only - Episode:{episode_num}, EV1:{initial_soc['ev1']:.1f}%, EV2:{initial_soc['ev2']:.1f}%"
+        title = f"MADDPG Only - Episode:{episode_num}, EV1:{initial_soc['ev1']:.1f}%, EV2:{initial_soc['ev2']:.1f}%, EV3:{initial_soc['ev3']:.1f}%"
     else:
         title = "MADDPG Only - Actual Charging vs AG Request"
     

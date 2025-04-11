@@ -43,42 +43,93 @@ class ReplayBuffer:
                 torch.tensor(done, dtype=torch.float32, device=DEVICE))
 
 # --------------------------
-# Actor (Policy Network)
+# Transformer-based Actor
 # --------------------------
-class Actor(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_size=MADDPG_HIDDEN_SIZE):
-        super(Actor, self).__init__()
-        self.fc1 = nn.Linear(state_dim, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, action_dim)
+class TransformerActor(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_size=MADDPG_HIDDEN_SIZE, num_heads=4, num_layers=2):
+        super(TransformerActor, self).__init__()
+        self.state_embedding = nn.Linear(state_dim, hidden_size)
+        
+        # Transformerエンコーダ層
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_size,
+            nhead=num_heads,
+            dim_feedforward=hidden_size * 4,
+            dropout=0.1,
+            batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+        # 出力層
+        self.output_layer = nn.Linear(hidden_size, action_dim)
     
     def forward(self, state):
-        x = F.relu(self.fc1(state))
-        x = F.relu(self.fc2(x))
-        # softplusで非負出力し、5を上限とする
-        x = torch.clamp(F.softplus(self.fc3(x)), 0, 5)
+        # 状態を埋め込み
+        x = self.state_embedding(state)
+        
+        # バッチサイズを取得
+        batch_size = x.size(0)
+        
+        # シーケンスとして扱うために形状を変更
+        x = x.unsqueeze(1)  # [batch_size, 1, hidden_size]
+        
+        # Transformerエンコーダを適用
+        x = self.transformer_encoder(x)
+        
+        # 出力層を適用
+        x = self.output_layer(x.squeeze(1))
+        
+        # 出力を0-5の範囲にスケーリング
+        x = torch.sigmoid(x) * 5
+        
         return x
 
 # --------------------------
-# Critic (Q Network)
+# Transformer-based Critic
 # --------------------------
-class Critic(nn.Module):
-    def __init__(self, state_dim, action_dim, num_agents, hidden_size=MADDPG_HIDDEN_SIZE, init_w=CRITIC_INIT_W):
-        super(Critic, self).__init__()
-        self.fc1 = nn.Linear(state_dim * num_agents, hidden_size)
-        self.fc2 = nn.Linear(hidden_size + action_dim * num_agents, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, 1)
-        self.fc3.weight.data.uniform_(-init_w, init_w)
-        self.fc3.bias.data.uniform_(-init_w, init_w)
+class TransformerCritic(nn.Module):
+    def __init__(self, state_dim, action_dim, num_agents, hidden_size=MADDPG_HIDDEN_SIZE, num_heads=4, num_layers=2, init_w=CRITIC_INIT_W):
+        super(TransformerCritic, self).__init__()
+        self.state_embedding = nn.Linear(state_dim * num_agents, hidden_size)
+        self.action_embedding = nn.Linear(action_dim * num_agents, hidden_size)
+        
+        # Transformerエンコーダ層
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_size,
+            nhead=num_heads,
+            dim_feedforward=hidden_size * 4,
+            dropout=0.1,
+            batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+        # 出力層
+        self.output_layer = nn.Linear(hidden_size, 1)
+        self.output_layer.weight.data.uniform_(-init_w, init_w)
+        self.output_layer.bias.data.uniform_(-init_w, init_w)
     
     def forward(self, states, actions):
         batch_size = states.size(0)
+        
+        # 状態と行動を埋め込み
         states_flat = states.view(batch_size, -1)
         actions_flat = actions.view(batch_size, -1)
-        x = F.relu(self.fc1(states_flat))
-        x = torch.cat([x, actions_flat], dim=1)
-        x = F.relu(self.fc2(x))
-        q = self.fc3(x)
+        
+        state_emb = self.state_embedding(states_flat)
+        action_emb = self.action_embedding(actions_flat)
+        
+        # 状態と行動の埋め込みを結合
+        x = state_emb + action_emb
+        
+        # シーケンスとして扱うために形状を変更
+        x = x.unsqueeze(1)  # [batch_size, 1, hidden_size]
+        
+        # Transformerエンコーダを適用
+        x = self.transformer_encoder(x)
+        
+        # 出力層を適用
+        q = self.output_layer(x.squeeze(1))
+        
         return q
 
 # --------------------------

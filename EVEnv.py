@@ -28,11 +28,14 @@ class EVEnv:
         self.reset()
     
     def reset(self):
-        self.soc = {"ev1": random.uniform(0, 100), "ev2": random.uniform(0, 100)}
+        self.soc = {"ev1": random.uniform(0, 100), "ev2": random.uniform(0, 100), "ev3": random.uniform(0, 100)}
         self.initial_soc = self.soc.copy()  # 各EVの初期SoC値を保存
         
-        # 両エージェントの充電可能量を計算
-        total_available_capacity = (2 * self.capacity) - (self.soc["ev1"] + self.soc["ev2"])
+        # 全エージェントの充電可能量を計算
+        total_available_capacity = (3 * self.capacity) - (self.soc["ev1"] + self.soc["ev2"] + self.soc["ev3"])
+        
+        # 合計を残り充電可能容量の0.9倍に設定
+        total_available_capacity = total_available_capacity * 0.9
         
         # dirichlet分布を使って48ステップ分のAG要請を生成
         # alpha値を全て1にすると一様なdirichlet分布になる
@@ -42,24 +45,24 @@ class EVEnv:
         # 合計が total_available_capacity になるようにスケール
         self.ag_requests_for_episode = ag_request_ratios * total_available_capacity
         
-        # 各ステップの要請値が10を超えないように制限
-        # 10を超える要請値がある場合は、超過分を他のステップに再分配
-        while np.any(self.ag_requests_for_episode > 10.0):
-            # 10を超える要請値を特定
-            over_limit_indices = np.where(self.ag_requests_for_episode > 10.0)[0]
-            under_limit_indices = np.where(self.ag_requests_for_episode < 10.0)[0]
+        # 各ステップの要請値が15を超えないように制限
+        # 15を超える要請値がある場合は、超過分を他のステップに再分配
+        while np.any(self.ag_requests_for_episode > 15.0):
+            # 15を超える要請値を特定
+            over_limit_indices = np.where(self.ag_requests_for_episode > 15.0)[0]
+            under_limit_indices = np.where(self.ag_requests_for_episode < 15.0)[0]
             
             if len(under_limit_indices) == 0:
-                # すべてのステップが10に近い場合、均等に分配
+                # すべてのステップが15に近い場合、均等に分配
                 self.ag_requests_for_episode = np.ones(self.episode_steps) * (total_available_capacity / self.episode_steps)
                 break
             
             for idx in over_limit_indices:
-                excess = self.ag_requests_for_episode[idx] - 10.0
-                self.ag_requests_for_episode[idx] = 10.0
+                excess = self.ag_requests_for_episode[idx] - 15.0
+                self.ag_requests_for_episode[idx] = 15.0
                 
-                # 余剰分を10未満のステップに分配
-                distribution_weights = 10.0 - self.ag_requests_for_episode[under_limit_indices]
+                # 余剰分を15未満のステップに分配
+                distribution_weights = 15.0 - self.ag_requests_for_episode[under_limit_indices]
                 if np.sum(distribution_weights) > 0:
                     distribution_ratios = distribution_weights / np.sum(distribution_weights)
                     redistribution = excess * distribution_ratios
@@ -72,23 +75,27 @@ class EVEnv:
         
         state_ev1 = self.get_state_for_agent("ev1")
         state_ev2 = self.get_state_for_agent("ev2")
-        return np.array([state_ev1, state_ev2])
+        state_ev3 = self.get_state_for_agent("ev3")
+        return np.array([state_ev1, state_ev2, state_ev3])
 
     
     def get_state_for_agent(self, agent):
         if agent == "ev1":
-            return np.array([self.soc["ev1"], self.soc["ev2"], self.ag_request, self.step_count], dtype=np.float32)
+            return np.array([self.soc["ev1"], self.soc["ev2"], self.soc["ev3"], self.ag_request, self.step_count], dtype=np.float32)
         elif agent == "ev2":
-            return np.array([self.soc["ev2"], self.soc["ev1"], self.ag_request, self.step_count], dtype=np.float32)
+            return np.array([self.soc["ev2"], self.soc["ev1"], self.soc["ev3"], self.ag_request, self.step_count], dtype=np.float32)
+        elif agent == "ev3":
+            return np.array([self.soc["ev3"], self.soc["ev1"], self.soc["ev2"], self.ag_request, self.step_count], dtype=np.float32)
         else:
             raise ValueError("Unknown agent")
             
     def step(self, actions):
         """
-        両エージェントが同時に行動を決定するステップ処理
+        全エージェントが同時に行動を決定するステップ処理
         """
         a1 = actions[0][0]
         a2 = actions[1][0]
+        a3 = actions[2][0]
         
         # 充電更新処理（CAPACITYを上限とする）
         penalty_ev1 = False
@@ -105,22 +112,46 @@ class EVEnv:
         else:
             self.soc["ev2"] += a2
         
+        penalty_ev3 = False
+        if self.soc["ev3"] + a3 > self.capacity:
+            self.soc["ev3"] = self.capacity
+            penalty_ev3 = True
+        else:
+            self.soc["ev3"] += a3
+        
         # 報酬計算
-        total_charge = a1 + a2
+        total_charge = a1 + a2 + a3
         deviation = abs(total_charge - self.ag_request)
-        if deviation <= TOLERANCE_NARROW:
+        
+        # 許容範囲を1.5倍に設定
+        TOLERANCE_NARROW_15 = TOLERANCE_NARROW * 1.5
+        TOLERANCE_WIDE_15 = TOLERANCE_WIDE * 1.5
+        
+        if deviation <= TOLERANCE_NARROW_15:
             reward_total = 100
-        elif deviation < TOLERANCE_WIDE:
-            reward_total = 20 * (TOLERANCE_WIDE - deviation)
+        elif deviation < TOLERANCE_WIDE_15:
+            reward_total = 20 * (TOLERANCE_WIDE_15 - deviation)
         else:
             reward_total = 0
         
-        reward_ev1 = reward_total / 2.0
-        reward_ev2 = reward_total / 2.0
+        # 各エージェントの充電量に応じて報酬を分配
+        if total_charge > 0:
+            reward_ev1 = reward_total * (a1 / total_charge)
+            reward_ev2 = reward_total * (a2 / total_charge)
+            reward_ev3 = reward_total * (a3 / total_charge)
+        else:
+            # 充電量が0の場合は均等に分配
+            reward_ev1 = reward_total / 3.0
+            reward_ev2 = reward_total / 3.0
+            reward_ev3 = reward_total / 3.0
+        
+        # ペナルティの適用
         if penalty_ev1:
             reward_ev1 -= PENALTY_WEIGHT
         if penalty_ev2:
             reward_ev2 -= PENALTY_WEIGHT
+        if penalty_ev3:
+            reward_ev3 -= PENALTY_WEIGHT
 
         self.step_count += 1
         
@@ -130,9 +161,10 @@ class EVEnv:
         
         state_ev1 = self.get_state_for_agent("ev1")
         state_ev2 = self.get_state_for_agent("ev2")
-        next_state = np.array([state_ev1, state_ev2])
-        rewards = np.array([reward_ev1, reward_ev2], dtype=np.float32)
-        done_flags = np.array([self.step_count >= self.episode_steps, self.step_count >= self.episode_steps], dtype=np.float32)
+        state_ev3 = self.get_state_for_agent("ev3")
+        next_state = np.array([state_ev1, state_ev2, state_ev3])
+        rewards = np.array([reward_ev1, reward_ev2, reward_ev3], dtype=np.float32)
+        done_flags = np.array([self.step_count >= self.episode_steps, self.step_count >= self.episode_steps, self.step_count >= self.episode_steps], dtype=np.float32)
         info = {
             "total_charge": total_charge,
             "reward_total": reward_total,

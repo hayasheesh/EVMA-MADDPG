@@ -18,22 +18,36 @@ from Utils import DEVICE as device
 class MADDPG:
     def __init__(self, state_dim=STATE_DIM, action_dim=ACTION_DIM, num_agents=NUM_AGENTS, 
                  hidden_size=MADDPG_HIDDEN_SIZE, gamma=GAMMA, tau=TAU, lr_actor=LR_ACTOR, 
-                 lr_critic=LR_CRITIC, batch_size=BATCH_SIZE, memory_size=MEMORY_SIZE):
+                 lr_critic=LR_CRITIC, batch_size=BATCH_SIZE, memory_size=MEMORY_SIZE,
+                 use_transformer=False):
         self.num_agents = num_agents
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
         self.tau = tau
         self.batch_size = batch_size
+        self.use_transformer = use_transformer
         
         # Actor, Critic ネットワークの初期化とターゲットネットワークの作成
-        self.actors = [Actor(state_dim, action_dim, hidden_size).to(device) for _ in range(num_agents)]
-        self.target_actors = [copy.deepcopy(actor).to(device) for actor in self.actors]
-        self.actor_optimizers = [optim.Adam(actor.parameters(), lr=lr_actor) for actor in self.actors]
-        
-        self.critics = [Critic(state_dim, action_dim, num_agents, hidden_size).to(device) for _ in range(num_agents)]
-        self.target_critics = [copy.deepcopy(critic).to(device) for critic in self.critics]
-        self.critic_optimizers = [optim.Adam(critic.parameters(), lr=lr_critic) for critic in self.critics]
+        if use_transformer:
+            # Transformerベースのネットワークを使用
+            from Models import TransformerActor, TransformerCritic
+            self.actors = [TransformerActor(state_dim, action_dim, hidden_size).to(device) for _ in range(num_agents)]
+            self.target_actors = [copy.deepcopy(actor).to(device) for actor in self.actors]
+            self.actor_optimizers = [optim.Adam(actor.parameters(), lr=lr_actor) for actor in self.actors]
+            
+            self.critics = [TransformerCritic(state_dim, action_dim, num_agents, hidden_size).to(device) for _ in range(num_agents)]
+            self.target_critics = [copy.deepcopy(critic).to(device) for critic in self.critics]
+            self.critic_optimizers = [optim.Adam(critic.parameters(), lr=lr_critic) for critic in self.critics]
+        else:
+            # 通常のMADDPGネットワークを使用
+            self.actors = [Actor(state_dim, action_dim, hidden_size).to(device) for _ in range(num_agents)]
+            self.target_actors = [copy.deepcopy(actor).to(device) for actor in self.actors]
+            self.actor_optimizers = [optim.Adam(actor.parameters(), lr=lr_actor) for actor in self.actors]
+            
+            self.critics = [Critic(state_dim, action_dim, num_agents, hidden_size).to(device) for _ in range(num_agents)]
+            self.target_critics = [copy.deepcopy(critic).to(device) for critic in self.critics]
+            self.critic_optimizers = [optim.Adam(critic.parameters(), lr=lr_critic) for critic in self.critics]
         
         self.buffer = ReplayBuffer(memory_size)
         self.loss_fn = torch.nn.MSELoss()

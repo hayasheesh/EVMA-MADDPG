@@ -24,9 +24,9 @@ RF_N_ESTIMATORS = 10         # RandomForestの決定木の数
 # MADDPG 用ハイパーパラメータ
 LR_ACTOR = 1e-3              # Actor の学習率
 LR_CRITIC = 1e-3             # Critic の学習率
-STATE_DIM = 4                # 環境状態の次元（自分のSoC、相手のSoC、AG要請値、ステップ数）
+STATE_DIM = 5                # 環境状態の次元（自分のSoC、他の2つのエージェントのSoC、AG要請値、ステップ数）
 ACTION_DIM = 1               # 行動の次元
-NUM_AGENTS = 2               # エージェント数
+NUM_AGENTS = 3               # エージェント数
 MADDPG_HIDDEN_SIZE = 64      # ネットワークの隠れ層のサイズ
 GAMMA = 0.95                 # 割引率
 TAU = 0.01                   # ソフトアップデート係数

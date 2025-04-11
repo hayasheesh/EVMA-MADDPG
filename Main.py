@@ -4,10 +4,10 @@ from EVEnv import EVEnv
 from Agent import MADDPG
 from Utils import plot_episode_data, plot_episode_rewards
 
-def train_maddpg_only(num_episodes=NUM_EPISODES):
+def train_maddpg_only(num_episodes=NUM_EPISODES, use_transformer=False):
     env = EVEnv(capacity=CAPACITY, initial_soc=INITIAL_SOC, ag_request=AG_REQUEST, 
                episode_steps=EPISODE_STEPS)
-    agent = MADDPG(STATE_DIM, ACTION_DIM, num_agents=NUM_AGENTS)
+    agent = MADDPG(STATE_DIM, ACTION_DIM, num_agents=NUM_AGENTS, use_transformer=use_transformer)
     
     episode_rewards = []
     save_folder = r"C:\Users\hayas\Desktop\EVMA_Local\結果保存"
@@ -58,10 +58,12 @@ def test_maddpg_only(agent, env, save_folder, current_episode, num_test_episodes
         ag_requests_steps = []
         ev1_actions = []
         ev2_actions = []
+        ev3_actions = []
         
         initial_soc = {
             'ev1': env.soc["ev1"],
-            'ev2': env.soc["ev2"]
+            'ev2': env.soc["ev2"],
+            'ev3': env.soc["ev3"]
         }
         
         for t in range(env.episode_steps):
@@ -72,6 +74,7 @@ def test_maddpg_only(agent, env, save_folder, current_episode, num_test_episodes
             
             ev1_actions.append(actions[0][0])
             ev2_actions.append(actions[1][0])
+            ev3_actions.append(actions[2][0])
             
             next_state, rewards, done, info = env.step(actions)
             
@@ -83,14 +86,16 @@ def test_maddpg_only(agent, env, save_folder, current_episode, num_test_episodes
         
         total_rewards.append(episode_reward)
         
-        min_len = min(len(ag_requests_steps), len(ev1_actions), len(ev2_actions))
+        min_len = min(len(ag_requests_steps), len(ev1_actions), len(ev2_actions), len(ev3_actions))
         ag_requests_steps = ag_requests_steps[:min_len]
         ev1_actions = ev1_actions[:min_len]
         ev2_actions = ev2_actions[:min_len]
+        ev3_actions = ev3_actions[:min_len]
         
         plot_data = {
             'actual_ev1': ev1_actions,
             'actual_ev2': ev2_actions,
+            'actual_ev3': ev3_actions,
             'ag_requests': ag_requests_steps
         }
         plot_episode_data(
@@ -106,4 +111,8 @@ def test_maddpg_only(agent, env, save_folder, current_episode, num_test_episodes
     return avg_reward
 
 if __name__ == '__main__':
-    train_maddpg_only()
+    # 通常のMADDPGを使用する場合
+    # train_maddpg_only()
+    
+    # TransformerベースのMADDPGを使用する場合
+    train_maddpg_only(use_transformer=True)
