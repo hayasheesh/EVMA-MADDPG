@@ -4,10 +4,10 @@ from EVEnv import EVEnv
 from Agent import MADDPG
 from Utils import plot_episode_data, plot_episode_rewards
 
-def train_maddpg_only(num_episodes=NUM_EPISODES, use_transformer=False):
+def train_maddpg_only(num_episodes=NUM_EPISODES):
     env = EVEnv(capacity=CAPACITY, initial_soc=INITIAL_SOC, ag_request=AG_REQUEST, 
                episode_steps=EPISODE_STEPS)
-    agent = MADDPG(STATE_DIM, ACTION_DIM, num_agents=NUM_AGENTS, use_transformer=use_transformer)
+    agent = MADDPG(STATE_DIM, ACTION_DIM, num_agents=NUM_AGENTS)
     
     episode_rewards = []
     save_folder = r"C:\Users\hayas\Desktop\EVMA_Local\結果保存"
@@ -111,8 +111,4 @@ def test_maddpg_only(agent, env, save_folder, current_episode, num_test_episodes
     return avg_reward
 
 if __name__ == '__main__':
-    # 通常のMADDPGを使用する場合
-    # train_maddpg_only()
-    
-    # TransformerベースのMADDPGを使用する場合
-    train_maddpg_only(use_transformer=True)
+    train_maddpg_only()

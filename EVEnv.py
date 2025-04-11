@@ -34,16 +34,16 @@ class EVEnv:
         # 全エージェントの充電可能量を計算
         total_available_capacity = (3 * self.capacity) - (self.soc["ev1"] + self.soc["ev2"] + self.soc["ev3"])
         
-        # 合計を残り充電可能容量の0.9倍に設定
-        total_available_capacity = total_available_capacity * 0.9
+        # 合計充電量を残り充電可能容量の0.9倍に設定
+        total_charge_target = total_available_capacity * 0.9
         
         # dirichlet分布を使って48ステップ分のAG要請を生成
         # alpha値を全て1にすると一様なdirichlet分布になる
         alpha = np.ones(self.episode_steps)
         ag_request_ratios = np.random.dirichlet(alpha)
         
-        # 合計が total_available_capacity になるようにスケール
-        self.ag_requests_for_episode = ag_request_ratios * total_available_capacity
+        # 合計が total_charge_target になるようにスケール
+        self.ag_requests_for_episode = ag_request_ratios * total_charge_target
         
         # 各ステップの要請値が15を超えないように制限
         # 15を超える要請値がある場合は、超過分を他のステップに再分配
@@ -54,7 +54,7 @@ class EVEnv:
             
             if len(under_limit_indices) == 0:
                 # すべてのステップが15に近い場合、均等に分配
-                self.ag_requests_for_episode = np.ones(self.episode_steps) * (total_available_capacity / self.episode_steps)
+                self.ag_requests_for_episode = np.ones(self.episode_steps) * (total_charge_target / self.episode_steps)
                 break
             
             for idx in over_limit_indices:
@@ -136,16 +136,22 @@ class EVEnv:
         
         # 各エージェントの充電量に応じて報酬を分配
         if total_charge > 0:
-            reward_ev1 = reward_total * (a1 / total_charge)
-            reward_ev2 = reward_total * (a2 / total_charge)
-            reward_ev3 = reward_total * (a3 / total_charge)
+            # 各エージェントの充電量の割合を計算
+            charge_ratio_ev1 = a1 / total_charge
+            charge_ratio_ev2 = a2 / total_charge
+            charge_ratio_ev3 = a3 / total_charge
+            
+            # 報酬を分配
+            reward_ev1 = reward_total * charge_ratio_ev1
+            reward_ev2 = reward_total * charge_ratio_ev2
+            reward_ev3 = reward_total * charge_ratio_ev3
         else:
             # 充電量が0の場合は均等に分配
             reward_ev1 = reward_total / 3.0
             reward_ev2 = reward_total / 3.0
             reward_ev3 = reward_total / 3.0
         
-        # ペナルティの適用
+        # ペナルティを適用
         if penalty_ev1:
             reward_ev1 -= PENALTY_WEIGHT
         if penalty_ev2:
